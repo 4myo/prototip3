@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type MapPoint = {
+export type MapPoint = {
   lat: number;
   lng: number;
+};
+
+export type MapViewportTarget = {
+  id: string;
+  name: string;
+  label: string;
+  position: MapPoint;
+  zoom: number;
 };
 
 export type ParkingSpace = {
@@ -42,6 +50,7 @@ type LiveMapProps = {
   destinationSet: boolean;
   navigationActive: boolean;
   viewportMode: "nearby-available" | "all-free-spaces";
+  focusedCity: MapViewportTarget;
   onSelectSpace: (spaceId: string) => void;
   onActivateSpace: (spaceId: string) => void;
   onSelectZone: (zoneId: string) => void;
@@ -116,35 +125,37 @@ function loadGoogleMaps(apiKey: string) {
 }
 
 function getSpaceIcon(space: ParkingSpace, isSelected: boolean) {
+  const baseFill = space.isFree ? "#22c55e" : "#ef4444";
+
   if (isSelected) {
     return {
-      path: window.google.maps.SymbolPath.CIRCLE,
+      path: "M -8 -8 L 8 -8 L 8 8 L -8 8 Z",
       fillColor: "#0f172a",
       fillOpacity: 1,
-      strokeColor: "#22c55e",
-      strokeWeight: 4,
-      scale: 8,
+      strokeColor: baseFill,
+      strokeWeight: 3,
+      scale: 1,
     };
   }
 
   if (space.isFree) {
     return {
-      path: window.google.maps.SymbolPath.CIRCLE,
+      path: "M -7 -7 L 7 -7 L 7 7 L -7 7 Z",
       fillColor: "#22c55e",
       fillOpacity: 0.95,
       strokeColor: "#ffffff",
       strokeWeight: 2,
-      scale: 6,
+      scale: 1,
     };
   }
 
   return {
-    path: window.google.maps.SymbolPath.CIRCLE,
-    fillColor: "#94a3b8",
+    path: "M -7 -7 L 7 -7 L 7 7 L -7 7 Z",
+    fillColor: "#ef4444",
     fillOpacity: 0.95,
     strokeColor: "#ffffff",
     strokeWeight: 2,
-    scale: 5,
+    scale: 1,
   };
 }
 
@@ -163,6 +174,7 @@ export function LiveMap({
   destinationSet,
   navigationActive,
   viewportMode,
+  focusedCity,
   onSelectSpace,
   onActivateSpace,
   onSelectZone,
@@ -172,17 +184,50 @@ export function LiveMap({
   const infoWindowRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
   const destinationMarkerRef = useRef<any>(null);
-  const routePolylineRef = useRef<any>(null);
+  const directionsRendererRef = useRef<any>(null);
+  const directionsServiceRef = useRef<any>(null);
   const zoneOverlaysRef = useRef<Record<string, any>>({});
   const spaceMarkersRef = useRef<Record<string, any>>({});
+  const fallbackRouteRef = useRef<any>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error" | "missing-key">("loading");
   const [message, setMessage] = useState("Loading navigation map...");
+  const [resolvedUserLocation, setResolvedUserLocation] = useState(userLocation.position);
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-  const boundsPoints = useMemo(
-    () => [userLocation.position, ...zones.map((zone) => zone.position)],
-    [userLocation.position, zones],
+  const focusedCityZones = useMemo(
+    () => zones.filter((zone) => zone.address.toLowerCase().includes(focusedCity.name.toLowerCase())),
+    [focusedCity.name, zones],
   );
+
+  const boundsPoints = useMemo(
+    () => [focusedCity.position, ...focusedCityZones.map((zone) => zone.position)],
+    [focusedCity.position, focusedCityZones],
+  );
+
+  useEffect(() => {
+    setResolvedUserLocation(userLocation.position);
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setResolvedUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => {
+        setResolvedUserLocation(userLocation.position);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 120_000,
+      },
+    );
+  }, [userLocation.position]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -213,10 +258,21 @@ export function LiveMap({
 
         mapInstanceRef.current = map;
         infoWindowRef.current = new google.maps.InfoWindow();
+        directionsServiceRef.current = new google.maps.DirectionsService();
+        directionsRendererRef.current = new google.maps.DirectionsRenderer({
+          map,
+          suppressMarkers: true,
+          preserveViewport: true,
+          polylineOptions: {
+            strokeColor: "#2563eb",
+            strokeOpacity: 0.92,
+            strokeWeight: 5,
+          },
+        });
 
         userMarkerRef.current = new google.maps.Marker({
           map,
-          position: userLocation.position,
+          position: resolvedUserLocation,
           title: userLocation.label,
           icon: {
             url: buildPinSvg("#2563eb", "U"),
@@ -239,25 +295,16 @@ export function LiveMap({
         });
         destinationMarkerRef.current.setZIndex(999);
 
-        routePolylineRef.current = new google.maps.Polyline({
-          map,
-          path: [],
-          strokeColor: "#2563eb",
-          strokeOpacity: 0.92,
-          strokeWeight: 5,
-          visible: false,
-        });
-
         const overlays: Record<string, any> = {};
         zones.forEach((zone) => {
           const polygon = new google.maps.Polygon({
             map,
             paths: zone.outline,
-            strokeColor: zone.color,
-            strokeOpacity: zone.id === selectedZone.id ? 0.9 : 0.5,
-            strokeWeight: zone.id === selectedZone.id ? 3 : 2,
-            fillColor: zone.color,
-            fillOpacity: zone.id === selectedZone.id ? 0.18 : 0.08,
+            strokeColor: zone.free > 0 ? "#16a34a" : "#dc2626",
+            strokeOpacity: zone.id === selectedZone.id ? 0.95 : 0.72,
+            strokeWeight: zone.id === selectedZone.id ? 4 : 3,
+            fillColor: zone.free > 0 ? "#22c55e" : "#ef4444",
+            fillOpacity: zone.id === selectedZone.id ? 0.24 : 0.15,
           });
 
           polygon.addListener("click", () => onSelectZone(zone.id));
@@ -274,9 +321,8 @@ export function LiveMap({
         });
         zoneOverlaysRef.current = overlays;
 
-        const bounds = new google.maps.LatLngBounds();
-        boundsPoints.forEach((point) => bounds.extend(point));
-        map.fitBounds(bounds, 80);
+        map.setCenter(focusedCity.position);
+        map.setZoom(focusedCity.zoom);
 
         setStatus("ready");
         setMessage("Navigation map ready");
@@ -295,17 +341,20 @@ export function LiveMap({
       infoWindowRef.current?.close();
       userMarkerRef.current?.setMap(null);
       destinationMarkerRef.current?.setMap(null);
-      routePolylineRef.current?.setMap(null);
+      directionsRendererRef.current?.setMap(null);
+      fallbackRouteRef.current?.setMap(null);
       Object.values(zoneOverlaysRef.current).forEach((overlay) => overlay.setMap(null));
       Object.values(spaceMarkersRef.current).forEach((marker) => marker.setMap(null));
       zoneOverlaysRef.current = {};
       spaceMarkersRef.current = {};
       userMarkerRef.current = null;
       destinationMarkerRef.current = null;
-      routePolylineRef.current = null;
+      directionsRendererRef.current = null;
+      directionsServiceRef.current = null;
+      fallbackRouteRef.current = null;
       mapInstanceRef.current = null;
     };
-  }, [apiKey, boundsPoints, onSelectZone, selectedZone.id, userLocation.label, userLocation.position, zones]);
+  }, [apiKey, focusedCity.position, focusedCity.zoom, onSelectZone, resolvedUserLocation, selectedZone.id, userLocation.label, zones]);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -321,11 +370,11 @@ export function LiveMap({
 
       const isActive = zoneId === selectedZone.id;
       overlay.setOptions({
-        strokeColor: zone.color,
-        fillColor: zone.color,
-        strokeOpacity: isActive ? 0.9 : 0.5,
-        strokeWeight: isActive ? 3 : 2,
-        fillOpacity: isActive ? 0.18 : 0.08,
+        strokeColor: zone.free > 0 ? "#16a34a" : "#dc2626",
+        fillColor: zone.free > 0 ? "#22c55e" : "#ef4444",
+        strokeOpacity: isActive ? 0.95 : 0.72,
+        strokeWeight: isActive ? 4 : 3,
+        fillOpacity: isActive ? 0.24 : 0.15,
       });
     });
 
@@ -359,11 +408,11 @@ export function LiveMap({
     });
     spaceMarkersRef.current = nextMarkers;
 
-    userMarkerRef.current?.setPosition(userLocation.position);
+    userMarkerRef.current?.setPosition(resolvedUserLocation);
     destinationMarkerRef.current?.setPosition(selectedSpace.position);
     destinationMarkerRef.current?.setTitle(selectedSpace.code);
     destinationMarkerRef.current?.setVisible(navigationActive && destinationSet);
-  }, [destinationSet, navigationActive, onActivateSpace, onSelectSpace, selectedSpace.id, selectedSpace.position, selectedZone.id, spaces, userLocation.position, zones]);
+  }, [destinationSet, navigationActive, onActivateSpace, onSelectSpace, resolvedUserLocation, selectedSpace.id, selectedSpace.position, selectedZone.id, spaces, zones]);
 
   useEffect(() => {
     const google = window.google;
@@ -375,57 +424,100 @@ export function LiveMap({
     const resetBounds = new google.maps.LatLngBounds();
 
     if (viewportMode === "all-free-spaces") {
-      resetBounds.extend(userLocation.position);
+      resetBounds.extend(focusedCity.position);
       zones.forEach((zone) => resetBounds.extend(zone.position));
       spaces.forEach((space) => resetBounds.extend(space.position));
       map.fitBounds(resetBounds, 80);
       return;
     }
 
-    resetBounds.extend(userLocation.position);
-    resetBounds.extend(selectedZone.position);
+    resetBounds.extend(focusedCity.position);
+
+    const candidateZones = focusedCityZones.length > 0 ? focusedCityZones : [selectedZone];
+    candidateZones.forEach((zone) => resetBounds.extend(zone.position));
     spaces.forEach((space) => {
-      if (space.zoneId === selectedZone.id) {
+      if (candidateZones.some((zone) => zone.id === space.zoneId)) {
         resetBounds.extend(space.position);
       }
     });
+
     map.fitBounds(resetBounds, 110);
-  }, [selectedZone.id, selectedZone.position, spaces, userLocation.position, viewportMode, zones]);
+    const listener = window.google?.maps?.event.addListenerOnce(map, "bounds_changed", () => {
+      if (map.getZoom() > focusedCity.zoom + 1) {
+        map.setZoom(focusedCity.zoom + 1);
+      }
+      if (map.getZoom() < focusedCity.zoom - 1) {
+        map.setZoom(focusedCity.zoom);
+      }
+    });
+
+    return () => {
+      if (listener) {
+        window.google.maps.event.removeListener(listener);
+      }
+    };
+  }, [focusedCity.position, focusedCity.zoom, focusedCityZones, selectedZone, spaces, viewportMode, zones]);
 
   useEffect(() => {
     const google = window.google;
     const map = mapInstanceRef.current;
-    if (!google?.maps || !map || !routePolylineRef.current) {
+    const directionsRenderer = directionsRendererRef.current;
+    const directionsService = directionsServiceRef.current;
+    if (!google?.maps || !map || !directionsRenderer || !directionsService) {
       return;
     }
 
     if (!destinationSet || !navigationActive) {
-      routePolylineRef.current.setPath([]);
-      routePolylineRef.current.setVisible(false);
+      directionsRenderer.set("directions", null);
+      fallbackRouteRef.current?.setMap(null);
+      fallbackRouteRef.current = null;
       destinationMarkerRef.current?.setVisible(false);
       setMessage("Destination is not set yet");
-
-      const overviewBounds = new google.maps.LatLngBounds();
-      boundsPoints.forEach((point) => overviewBounds.extend(point));
-      map.fitBounds(overviewBounds, 80);
       return;
     }
 
-    const navigationPath = [
-      userLocation.position,
-      ...selectedZone.navigationPath,
-      selectedSpace.position,
-    ];
+    directionsService.route(
+      {
+        origin: resolvedUserLocation,
+        destination: selectedSpace.position,
+        travelMode: google.maps.TravelMode.DRIVING,
+        provideRouteAlternatives: false,
+      },
+      (result: any, routeStatus: string) => {
+        if (routeStatus === "OK" && result) {
+          fallbackRouteRef.current?.setMap(null);
+          fallbackRouteRef.current = null;
+          directionsRenderer.setDirections(result);
+          destinationMarkerRef.current?.setVisible(true);
+          setMessage("Guidance active with Google driving directions");
 
-    routePolylineRef.current.setPath(navigationPath);
-    routePolylineRef.current.setVisible(true);
-    destinationMarkerRef.current?.setVisible(true);
-    setMessage("Guidance active to selected parking area");
+          const leg = result.routes?.[0]?.legs?.[0];
+          if (leg?.duration?.text && leg?.distance?.text) {
+            setMessage(`Drive ${leg.distance.text} · ${leg.duration.text}`);
+          }
+          return;
+        }
 
-    const routeBounds = new google.maps.LatLngBounds();
-    navigationPath.forEach((point) => routeBounds.extend(point));
-    map.fitBounds(routeBounds, 100);
-  }, [boundsPoints, destinationSet, navigationActive, selectedSpace.position, selectedZone.navigationPath, userLocation.position]);
+        directionsRenderer.set("directions", null);
+        fallbackRouteRef.current?.setMap(null);
+        fallbackRouteRef.current = new google.maps.Polyline({
+          map,
+          path: [resolvedUserLocation, ...selectedZone.navigationPath, selectedSpace.position],
+          strokeColor: "#2563eb",
+          strokeOpacity: 0.92,
+          strokeWeight: 5,
+        });
+        destinationMarkerRef.current?.setVisible(true);
+
+        const routeBounds = new google.maps.LatLngBounds();
+        [resolvedUserLocation, ...selectedZone.navigationPath, selectedSpace.position].forEach((point) =>
+          routeBounds.extend(point),
+        );
+        map.fitBounds(routeBounds, 100);
+        setMessage(`Google directions unavailable (${routeStatus}), using local route fallback`);
+      },
+    );
+  }, [destinationSet, navigationActive, resolvedUserLocation, selectedSpace.position, selectedZone.navigationPath]);
 
   return (
     <div className="map-shell">
@@ -438,7 +530,7 @@ export function LiveMap({
         <div className="map-toolbar-meta">
           <span className="map-meta-pill">{selectedZone.free} free spaces</span>
           <span className="map-meta-pill">{selectedSpace.code} selected</span>
-          <span className="map-meta-pill">{userLocation.label}</span>
+          <span className="map-meta-pill">{focusedCity.name}</span>
         </div>
       </div>
 

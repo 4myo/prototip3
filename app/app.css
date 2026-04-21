@@ -19,6 +19,18 @@ body {
   color: #0f172a;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 a {
   text-decoration: none;
 }
@@ -46,6 +58,173 @@ input {
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(14px);
+}
+
+.floating-search-shell {
+  position: fixed;
+  inset: 1rem 1rem auto 1rem;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.floating-search-card {
+  width: min(980px, 100%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.floating-search-card-open {
+  width: min(980px, 100%);
+}
+
+.floating-search-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  text-align: left;
+}
+
+.floating-search-toggle-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.floating-search-toggle-copy {
+  font-size: 0.84rem;
+  color: #64748b;
+}
+
+.floating-search-panel {
+  border-top: 1px solid rgba(226, 232, 240, 0.95);
+  padding: 0.85rem;
+}
+
+.floating-destination-shell {
+  position: fixed;
+  left: 50%;
+  bottom: 1.1rem;
+  z-index: 28;
+  transform: translateX(-50%);
+  width: min(340px, calc(100% - 1.5rem));
+  pointer-events: none;
+}
+
+.floating-destination-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 3.35rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1.15rem;
+  border: 1px solid #c7d2e3;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.floating-destination-button:hover {
+  transform: translateY(-1px);
+}
+
+.floating-destination-button-active {
+  border-color: #0f172a;
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.floating-destination-button-disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.floating-search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.floating-search-input-shell {
+  display: block;
+}
+
+.floating-search-input {
+  width: 100%;
+  border: 1px solid #d7e0ea;
+  border-radius: 1rem;
+  background: rgba(248, 250, 252, 0.98);
+  padding: 0.95rem 1rem;
+  font-size: 0.98rem;
+  color: #0f172a;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.floating-search-input:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.22);
+  border-color: #60a5fa;
+}
+
+.floating-search-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+.floating-search-chip {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 136px;
+  border-radius: 1rem;
+  border: 1px solid #dbe4ef;
+  background: #f8fbff;
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.floating-search-chip:hover,
+.floating-search-chip-active {
+  transform: translateY(-1px);
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.floating-search-chip-title {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.floating-search-chip-copy {
+  font-size: 0.82rem;
+  color: #64748b;
 }
 
 .professional-header {
@@ -464,6 +643,31 @@ input {
 }
 
 @media (max-width: 900px) {
+  .floating-search-shell {
+    inset: 0.75rem 0.75rem auto 0.75rem;
+  }
+
+  .floating-search-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .floating-search-toggle {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .floating-destination-shell {
+    bottom: 0.75rem;
+    width: min(320px, calc(100% - 1rem));
+  }
+
+  .floating-destination-button {
+    min-height: 3.1rem;
+    border-radius: 1rem;
+    font-size: 0.96rem;
+  }
+
   .map-frame {
     min-height: 420px;
   }
